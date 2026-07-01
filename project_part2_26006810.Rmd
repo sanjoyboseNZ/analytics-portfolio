@@ -1,0 +1,431 @@
+---
+title: "161.777 Practical Data Mining"
+subtitle: "Project Part 2, 2026"
+author: "Sanjoy Bose"
+output: html_document
+---
+
+```{r setup, echo=TRUE, warning=FALSE, message=FALSE}
+# Add any other packages you need to load here.
+library(tidyverse)
+library(arules)
+library(cluster)
+library(factoextra)
+library(plotly)
+
+# Read in the data
+wv_survey <- read_csv("https://www.massey.ac.nz/~jcmarsha/161777/assessment/data/wv_survey2014.csv")
+flags <- read.transactions(
+  "https://www.massey.ac.nz/~jcmarsha/161777/assessment/data/flags.txt",
+  cols = 1
+)
+```
+
+# Project part 2
+
+This part of the project has two exploratory data mining exercises. Exercise 3 uses clustering methods to explore structure in survey data. Exercise 4 uses association rules to explore patterns in transaction-style data.
+
+Use only code, methods, functions, and packages that have appeared in the course. Do not use material from outside the course. Work must be your own and may be checked by oral interview if needed.
+
+Unlike Project part 1, this part does not require blind test-set prediction files. Submit the knitted HTML report only:
+
+`report_part2_studentid.html`
+
+Keep written answers concise. Explain what you did, why the method was appropriate, and what conclusions are supported by the analysis.
+
+# Exercise 3: Clustering the New Zealand World Values Survey [32 marks]
+
+This exercise considers data from the New Zealand version of the 2014 World Values Survey. The variables are:
+
+| Variable | Description |
+|---|---|
+| `Female` | 1 means yes the person is female, 0 means male |
+| `Age` | Age in years |
+| `StateofHealth` | 1 = very good, 2 = good, 3 = fair, 4 = poor |
+| `MaritalStatus` | 1 = married, 2 = living together as married, 3 = divorced, 4 = separated, 5 = widowed, 6 = single |
+| `HighestEducation` | 1 = no secondary schooling, 2 = some secondary, 3 = finished secondary, 4 = some tertiary, 5 = degree |
+| `LifeSatisfaction` | 1 = least satisfied to 10 = most satisfied |
+| `IncomeDecile` | 1 = lowest income decile to 10 = highest income decile |
+| `SocialClass` | 1 = upper class, 2 = upper middle class, 3 = lower middle class, 4 = working class, 5 = lower class |
+| `BelieveinGod` | 1 = yes, 0 = no |
+| `FeelingofHappiness` | 1 = very happy, 2 = rather happy, 3 = not very happy, 4 = not at all happy |
+
+All other answers to these questions are coded as missing, `NA`.
+
+## 3.1 Initial exploration of the dataset [10 marks]
+
+Do an initial exploration of the dataset.
+
+Your answer should include:
+
+1. Plots and summary tables examining the distributions of the variables. Comment on the main patterns in the distributions. [6 marks]
+2. A brief comment on how survey participation may bias the sample. [2 marks]
+3. The three variables with the most missing values, with plausible reasons for this missingness. [2 marks]
+
+```{r}
+glimpse(wv_survey)
+summary(wv_survey)
+
+wv_survey |>
+  pivot_longer(everything(), names_to = "variable", values_to = "value") |>
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 10) +
+  facet_wrap(~ variable, scales = "free") +
+  labs(title = "Distributions of survey variables")
+
+missing_summary <- wv_survey |>
+  summarise(across(everything(), ~sum(is.na(.)))) |>
+  pivot_longer(everything(), names_to = "variable", values_to = "missing_count") |>
+  arrange(desc(missing_count))
+
+missing_summary
+head(missing_summary, 3)
+```
+
+ANSWER:
+1. The dataset contains 841 respondents and 10 survey variables. The sample is slightly female-dominated and mainly consists of middle-aged and older respondents. Most respondents report good health, relatively high education levels, high life satisfaction, and high happiness. Income is reasonably evenly distributed across deciles, while most respondents identify as middle social class. The majority believe in God. Missing values are most noticeable for BelieveinGod, SocialClass, and IncomeDecile.
+2. Some patterns in the data include high levels of life satisfaction and happiness, good self-reported health, and relatively high levels of education among respondents. In addition, variables involving more personal information, such as belief in God and income, have relatively high levels of missing data. These patterns suggest that survey participation may introduce self-selection bias, with some groups being more likely to respond than others. However, this conclusion should be treated with caution because information on non-respondents is not available. 
+3. The three variables with the highest number of missing values are BelieveinGod (160 missing values), SocialClass (99 missing values), and IncomeDecile (71 missing values). A plausible reason for missing values are: 
+  - BelieveinGod: Religious beliefs are a sensitive personal topic and some respondents may prefer not to answer. 
+  - SocialClass : It is probably because respondents find it difficult to classify themselves into a social class category. 
+  - IncomeDecile: Income-related questions are often considered private or sensitive, leading some respondents to withhold this information.
+
+## 3.2 Normalised dataset [3 marks]
+
+Prepare a new version of the dataset using all 10 variables listed above.
+
+Remove rows with missing values in any of the 10 variables, then normalise all 10 variables.
+
+Comment on why normalisation is appropriate before cluster analysis for these data.
+
+```{r}
+wv_complete <- wv_survey |>
+  drop_na()
+
+wv_scaled <- wv_complete |>
+  mutate(across(everything(), ~ as.numeric(scale(.x))))
+
+summary(wv_scaled)
+```
+
+ANSWER:
+Normalisation is appropriate because the variables are measured on different scales. For example, Age ranges from 18 to 90, whereas variables such as Female and BelieveinGod are binary (0–1), and several other variables are measured on ordinal scales ranging from 1–4, 1–5, or 1–10. Cluster analysis based on Euclidean distance is sensitive to variable scale, so variables with larger numerical ranges could dominate the distance calculations. By normalising the variables to have mean 0 and standard deviation 1, each variable contributes more equally to the clustering solution.
+## 3.3 Hierarchical clustering dendrogram [4 marks]
+
+Using the complete-case, normalised 10-variable dataset from Section 3.2, produce a dendrogram of the sample.
+
+Use Euclidean distance and complete linkage.
+
+What do you think is the best number of clusters to divide the sample into? Briefly justify your answer.
+
+```{r}
+wv_dist <- dist(wv_scaled, method = "euclidean")
+
+wv_hclust <- hclust(wv_dist, method = "complete")
+
+plot(
+  wv_hclust,
+  labels = FALSE,
+  main = "Complete-linkage hierarchical clustering",
+  xlab = "",
+  sub = ""
+)
+```
+
+ANSWER:
+The dendrogram shows two main branches merging at a height of approximately 10, indicating that the data can be broadly divided into two distinct groups. However, a 3-cluster solution is preferred because the next major merge occurs at a noticeably lower height of approximately 8, suggesting that one of the two main branches contains meaningful internal structure worth preserving. Choosing (k = 2) would merge groups that still appear reasonably different from each other in the dendrogram. Increasing to (k = 4) would further subdivide one of these groups, but the corresponding reduction in merge height is relatively small, suggesting that the additional split does not provide a sufficiently large gain in separation to justify the added complexity. Therefore, (k = 3) represents a reasonable balance between cluster separation and interpretability.
+
+## 3.4 k-means clustering [6 marks]
+
+Perform a k-means cluster analysis of the same complete-case, normalised 10-variable dataset, based on Euclidean distances.
+
+Choose an appropriate value of `k` from `1, 2, ..., 10`, and explain why you chose it. Include graphs of total within-cluster sum of squares, average silhouette width, and silhouettes for your chosen solution.
+
+There is not one perfect answer. Marks are awarded for sensible use of the diagnostics and a defensible choice.
+
+```{r}
+set.seed(161324)
+
+# Elbow plot: total within-cluster sum of squares
+wv_elbow <- tibble(
+  k = 1:10,
+  tot_withinss = NA_real_
+)
+
+for (i in 1:nrow(wv_elbow)) {
+  k_value <- wv_elbow$k[i]
+  km_fit <- kmeans(wv_scaled, centers = k_value, nstart = 20)
+  wv_elbow$tot_withinss[i] <- km_fit$tot.withinss
+}
+
+wv_elbow
+
+wv_elbow_plot <- ggplot(wv_elbow) +
+  aes(
+    x = k,
+    y = tot_withinss,
+    group = 1,
+    text = paste0("K = ", k, "<br>Total WSS = ", round(tot_withinss))
+  ) +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = "Number of clusters",
+    y = "Total within-cluster sum of squares"
+  )
+
+ggplotly(wv_elbow_plot, tooltip = "text")
+
+
+# Average silhouette width plot
+set.seed(161324)
+
+fviz_nbclust(
+  wv_scaled,
+  FUNcluster = kmeans,
+  method = "silhouette",
+  k.max = 10,
+  nstart = 20
+)
+
+
+# Final k-means model with chosen k
+# Change centers = 3 if your final chosen k is different
+set.seed(161324)
+
+wv_km4 <- kmeans(
+  wv_scaled,
+  centers = 3,
+  nstart = 25
+)
+
+wv_km4
+
+
+# Silhouette plot for chosen solution
+wv_sil4 <- silhouette(
+  wv_km4$cluster,
+  dist(wv_scaled)
+)
+
+fviz_silhouette(wv_sil4)
+```
+
+
+ANSWER:
+K-means clustering was applied to the normalised complete-case dataset using Euclidean distance. The elbow plot shows a substantial reduction in total within-cluster sum of squares as the number of clusters increases, with the rate of improvement becoming more gradual after approximately four clusters. This suggests that additional clusters beyond this point provide diminishing returns in terms of reducing within-cluster variation.
+
+The average silhouette width plot indicates that solutions with 2 and 3 clusters achieve the highest silhouette values (approximately 0.14), suggesting stronger cluster separation than solutions with larger numbers of clusters. Although the elbow plot could support a 4-cluster solution, the silhouette diagnostics favour a simpler solution.
+
+A three-cluster solution was therefore selected because it provides a good balance between cluster quality and interpretability. The silhouette values are among the highest observed, indicating relatively well-defined clusters, while the smaller number of clusters makes the solution easier to interpret. Overall, the three-cluster solution captures the main structure in the data without introducing unnecessary complexity.
+
+## 3.5 Visualisation of hierarchical clustering [3 marks]
+
+Regardless of your answer in Section 3.3, show a `fviz_cluster` graph based on 4 clusters from complete-linkage hierarchical clustering using the complete-case, normalised 10-variable dataset.
+
+Does the graph show sufficient separation between the clusters? Explain.
+
+```{r}
+hc4 <- cutree(
+  wv_hclust,
+  k = 4
+)
+
+# Visualise clusters
+fviz_cluster(
+  list(
+    data = wv_scaled,
+    cluster = hc4
+  ),
+  geom = "point",
+  main = "Hierarchical Clustering (4 Clusters)"
+)
+```
+
+ANSWER:
+The fviz_cluster plot shows some separation between the four clusters, but the separation is not particularly strong. Cluster 1 (red) is concentrated mainly on the left side of the plot and appears relatively distinct from the others. However, Clusters 2 (green) and 3 (blue) overlap considerably in the centre of the plot, while Cluster 4 (purple) is small and partially overlaps with Cluster 3.
+
+The cluster boundaries intersect in several areas, indicating that many observations lie close to the borders between clusters. This suggests that the data do not contain four completely distinct groups. Nevertheless, some structure is visible, particularly along the first dimension, where Cluster 1 is separated from the remaining clusters.
+
+Overall, the plot suggests moderate rather than strong cluster separation. The four-cluster solution captures meaningful differences in the data, but there is still substantial overlap between clusters, which is consistent with the relatively low silhouette widths observed earlier.
+
+## 3.6 Interpretation of k-means clusters [6 marks]
+
+Assume 4 clusters and use k-means on the complete-case, normalised 10-variable dataset.
+
+Explore the differences among the clusters using boxplots or suitable summary tables. For each cluster, write one or two sentences characterising the cluster in terms of the original variables.
+
+```{r}
+# Add k-means cluster membership to the original complete-case data
+wv_clustered <- wv_complete |>
+  mutate(
+    cluster = factor(wv_km4$cluster)
+  )
+
+# Mean profile of each cluster using original variables
+cluster_summary <- wv_clustered |>
+  group_by(cluster) |>
+  summarise(
+    across(
+      c(
+        Female,
+        Age,
+        StateofHealth,
+        MaritalStatus,
+        HighestEducation,
+        LifeSatisfaction,
+        IncomeDecile,
+        SocialClass,
+        BelieveinGod,
+        FeelingofHappiness
+      ),
+      mean,
+      na.rm = TRUE
+    ),
+    n = n()
+  )
+cluster_summary
+wv_clustered |>
+  pivot_longer(
+    cols = -cluster,
+    names_to = "variable",
+    values_to = "value"
+  ) |>
+  ggplot(aes(x = cluster, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free_y") +
+  labs(
+    title = "Survey Variables by K-means Cluster",
+    x = "Cluster",
+    y = "Value"
+  )
+
+```
+
+ANSWER:
+Cluster 1 consists mainly of middle-aged respondents (average age ≈ 46) with relatively high education, income and life satisfaction. Respondents in this cluster also report good health and tend to belong to lower social classes compared with some other clusters.
+  
+Cluster 2 contains the youngest respondents (average age ≈ 40) and has the lowest levels of life satisfaction and income. This cluster reports poorer health on average and has the highest average marital status score, suggesting a different family or relationship profile from the other clusters.
+
+Cluster 3 is characterised by relatively high life satisfaction, good health and comparatively high education levels. Respondents in this cluster have moderate-to-high income levels and are less likely to be female than those in Cluster 1.
+
+Cluster 4 contains the oldest respondents (average age ≈ 65). Despite having the lowest average education and income levels, members of this cluster report high life satisfaction and relatively favourable health outcomes compared with Cluster 2.
+
+The boxplots and cluster summary table indicate that the clusters differ mainly in terms of age, income, education, life satisfaction and health status. Age provides particularly strong separation, with Cluster 4 containing substantially older respondents than the other clusters. Differences in income and life satisfaction also contribute to the distinction between clusters.
+
+# Exercise 4: Association rules for flag colours [18 marks]
+
+A vexillologist is a person who studies flags. In this exercise we consider the colours of flags of different countries. Certain colours may tend to occur together.
+
+## 4.1 Frequency of colour use [3 marks]
+
+Make a plot showing how frequently the various colours have been used.
+
+What are the top three most commonly used colours?
+
+```{r}
+itemFrequencyPlot(flags, topN = 12, type = "absolute")
+
+itemFrequency(flags, type = "absolute") |>
+  sort(decreasing = TRUE) |>
+  head(3)
+```
+
+ANSWER:
+As per the frequency plot  Red, White, and Blue are the top three commonly used colours in national flags.
+
+## 4.2 Number of rules [2 marks]
+
+Consider only rules where at least 6 countries have used the same colour combination. Use a confidence cutoff of `confidence = 0.5`.
+
+How many rules are found?
+
+```{r}
+rules <- apriori(
+  flags,
+  parameter = list(support = 6 / length(flags), confidence = 0.5)
+)
+
+length(rules)
+```
+
+ANSWER:
+68 association rules were identified in the flag dataset using the Apriori algorithm. The analysis only retained rules that occurred in at least 6 countries (minimum support = 6/212 = 0.0283) and had a confidence of at least 0.5, which means that the colour on the right-hand side (RHS) occurs at least 50% of the time when the colour combination on the left-hand side (LHS) is present. In this calculation I have not considered any minimum color at each side. 
+
+## 4.3 Highest support rules [6 marks]
+
+Find the 5 rules with the highest support.
+
+Take the third rule in this list and explain:
+
+1. what the rule itself means, that is, what `itemset => itemset` represents
+2. the support value
+3. the confidence value
+4. the lift value
+
+```{r}
+rules_support <- sort(rules, by = "support", decreasing = TRUE)
+
+inspect(head(rules_support, 5))
+
+third_rule <- rules_support[3]
+inspect(third_rule)
+quality(third_rule)
+```
+
+ANSWER: 
+3rd rule out of the 5 rules is  {White} ⇒ {Red}
+1. Meaning of the rule: Flags containing White color tend to also contain Red color.
+2. Support (0.5566): Support indicates the proportion of all flags that contain both White and Red. A support of 0.5566 means that 55.7% of all flags (118 out of 212) contain both colours.
+3. Confidence (0.7815): It measures how often Red occurs when White is present. A confidence of 0.7815 means that 78.1% of flags containing White also contain Red.
+4. Lift (1.0041): It measures the strength of the association relative to chance. Since the lift is very close to 1, the occurrence of White provides very little additional information about whether Red is present. The two colours occur together frequently mainly because both colours are common in flags.
+
+## 4.4 Lift greater than 2 [3 marks]
+
+Find the rules for which lift is greater than 2.
+
+How many are there? Explain what these rules tell you.
+
+```{r}
+rules_lift2 <- subset(rules, lift > 2)
+
+length(rules_lift2)
+inspect(rules_lift2)
+```
+
+ANSWER:
+
+The result shows that there are 2 rules with lift greater than 2. Those rules are_
+
+{Red, White, Yellow}        ⇒ {Black} (lift = 2.57)
+{Green, Red, White, Yellow} ⇒ {Black} (lift = 2.36)
+
+These rules indicate a strong positive association with the colour Black. A lift greater than 2 means that Black is more than twice as likely to appear when the colours on the left-hand side are present than would be expected by chance. Therefore, these colour combinations provide strong evidence that Black tends to occur together with these sets of colours in national flags.
+
+## 4.5 Applied flag recommendation [4 marks]
+
+Suppose a new island country declares independence. The leaders have decided that the flag must include green as a prominent colour.
+
+Use the association rules to recommend one additional colour for the flag.
+
+To keep the recommendation simple, consider rules with `Green` on the left-hand side and a single colour on the right-hand side. Which additional colour would you recommend, and why?
+
+Your answer should refer to support, confidence, lift, and the colour frequencies where appropriate.
+
+```{r}
+green_rules <- subset(
+  rules,
+  subset = lhs %in% "Green" & size(lhs) == 1 & size(rhs) == 1
+)
+
+green_rules <- sort(green_rules, by = "lift", decreasing = TRUE)
+
+inspect(green_rules)
+quality(green_rules)
+
+itemFrequency(flags, type = "absolute") |>
+  sort(decreasing = TRUE)
+```
+
+ANSWER:
+Using association rules, two rules are found with Green on the left-hand side considering only one color in each side. Between them, {Green} ⇒ {Red} is the preferred recommendation. This rule has higher support (0.325) and confidence (0.767) than {Green} ⇒ {White}. The support indicates that 32.5% of all flags contain both Green and Red, while the confidence indicates that 76.7% of flags containing Green also contain Red. Although the lift value (0.985) being slightly below 1 indicates no positive association beyond chance, Red remains the stronger rule based on its higher support and confidence. In addition, the colour frequencies show that Red is the most frequently used colour overall, appearing in 165 flags. Therefore, Red is the most reasonable additional colour recommendation.
