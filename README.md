@@ -49,7 +49,7 @@ Now based in New Zealand, I am completing a **Master of Analytics (Business) at 
 ## Analytics Projects (Massey University — Semester 1, 2026)
 
 ### 1. 🐍 Credit Risk Analysis — Python & SQL
-**Course:** 161.777 Practical Data Mining
+**Course:** 158739 Data Mastery: Scripting, Databases and Data Privacy
 **Files:** `Assessment_4_Credit_Risk_Analysis.ipynb` | `Assessment_3_SQLite_Database.ipynb`
 
 End-to-end credit risk project integrating **three independent data sources**:
