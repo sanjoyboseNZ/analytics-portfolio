@@ -27,10 +27,10 @@ Now based in New Zealand, I am completing a **Master of Analytics (Business) at 
 
 | Qualification | Institution | Year |
 |---|---|---|
-| Master of Analytics (Business) *(in progress)* | Massey University, New Zealand | 2025–2026 |
-| Certified Expert in Risk Management (CERM) | Frankfurt School of Finance & Management, Germany | — |
-| MBA in Finance | IBA, University of Dhaka, Bangladesh | — |
-| BBA | Madurai Kamaraj University, India | — |
+| Master of Analytics (Business) *(in progress)* | Massey University, New Zealand | 2026–2027 |
+| Certified Expert in Risk Management (CERM) | Frankfurt School of Finance & Management, Germany | 2019—2020 |
+| MBA in Finance | IBA, University of Dhaka, Bangladesh | 1999—2001 |
+| BBA | Madurai Kamaraj University, India | 1995—1998 |
 
 ---
 
